@@ -192,3 +192,26 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+#ignore launcher
+home/pi/TouchSelfie/scripts/*.json
+home/pi/TouchSelfie/scripts/*.dat
+
+# ignore compiled python files
+home/pi/TouchSelfie/scripts/*.pyc
+
+# ignore emacs backupfiles
+home/pi/TouchSelfie/scripts/*.py~
+
+# ignore log and animation frames
+home/pi/TouchSelfie/Logs/*.log
+
+# ignore all files in the Photos directory
+home/pi/TouchSelfie/Photos/*.png
+home/pi/TouchSelfie/Photos/*.jpg
+home/pi/TouchSelfie/Photos/*.gif
+
+# ignore temp files
+home/pi/TouchSelfie/Temp/*.png
+home/pi/TouchSelfie/Temp/*.jpg
+home/pi/TouchSelfie/Temp/*.gif
