@@ -70,7 +70,7 @@ class BoothGoogle:
         self.log.info("Photo added to album successfully for file: %s", filename)
 
 
-    def send_email(self, email_address: str, filename: str = None):
+    def send_email(self, email_address: str, filename: str = ""):
         """Send a photo via email using the Google API."""
 
         if not self.ready:

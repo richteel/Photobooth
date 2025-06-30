@@ -19,6 +19,8 @@ class BoothCamera:
     software: str = "TouchSelfie"
     image_keywords: str = "TouchSelfie, Raspberry Pi, Photobooth"
     filepath: str = ""
+    location_lat: str = ""
+    location_long: str = ""
 
     def __init__(self, screen_width: int = 800, screen_height: int = 480):
         """Take photo for the photobooth"""
@@ -68,7 +70,7 @@ class BoothCamera:
             # Create optimized preview configuration with reduced resolution for better performance
             preview_width = min(640, self.preview_width)  # Limit preview to 640px width max
             preview_height = int(preview_width * self.sensor_height / self.sensor_width)
-            
+
             self.preview_config = self.camera.create_preview_configuration(
                 buffer_count=2,  # Reduced from 4 to 2 for less memory usage
                 display="main",
@@ -138,6 +140,30 @@ class BoothCamera:
         exif_dict["0th"][piexif.ImageIFD.DateTime] = dt
         exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = dt
         exif_dict["Exif"][piexif.ExifIFD.DateTimeDigitized] = dt
+        # GPSLatitude (GPS, tag 2)
+        if hasattr(self, 'location_lat') and self.location_lat:
+            lat = float(self.location_lat)
+            lat_ref = 'N' if lat >= 0 else 'S'
+            lat_deg = int(abs(lat))
+            lat_min = int((abs(lat) - lat_deg) * 60)
+            lat_sec = (abs(lat) - lat_deg - lat_min / 60) * 3600
+            exif_dict["GPS"][piexif.GPSIFD.GPSLatitude] = ((lat_deg, 1),
+                                                           (lat_min, 1),
+                                                           (int(lat_sec * 100), 100))
+            exif_dict["GPS"][piexif.GPSIFD.GPSLatitudeRef] = lat_ref
+            print(f"GPS coordinates (lat): {lat_deg}°{lat_min}'{lat_sec:.2f}\" {lat_ref}")
+        # GPSLongitude (GPS, tag 4)
+        if hasattr(self, 'location_long') and self.location_long:
+            lon = float(self.location_long)
+            lon_ref = 'E' if lon >= 0 else 'W'
+            lon_deg = int(abs(lon))
+            lon_min = int((abs(lon) - lon_deg) * 60)
+            lon_sec = (abs(lon) - lon_deg - lon_min / 60) * 3600
+            exif_dict["GPS"][piexif.GPSIFD.GPSLongitude] = ((lon_deg, 1),
+                                                            (lon_min, 1),
+                                                            (int(lon_sec * 100), 100))
+            exif_dict["GPS"][piexif.GPSIFD.GPSLongitudeRef] = lon_ref
+            print(f"GPS coordinates (long): {lon_deg}°{lon_min}'{lon_sec:.2f}\" {lon_ref}")
 
         # OffsetTime (Exif, tag 36880)
         offset = time.strftime("%z")
@@ -182,7 +208,7 @@ class BoothCamera:
         if self.camera is None:
             self.logger.error("Camera not initialized")
             return {"success": False, "pil_image": None, "message": "Camera not initialized"}
-        
+
         if self.still_config is None or self.preview_config is None:
             self.logger.error("Camera configurations not set")
             return {"success": False, "pil_image": None, "message": "Camera configurations not set"}

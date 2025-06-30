@@ -5,7 +5,6 @@ import shutil
 import time
 import logging
 import math
-import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image # type: ignore # pylint: disable=E0401
@@ -60,12 +59,14 @@ class BoothController:
         self.camera.image_comment = self.configuration.image_comment
         self.camera.software = self.configuration.software
         self.camera.image_keywords = self.configuration.image_keywords
+        self.camera.location_lat = self.configuration.location_lat
+        self.camera.location_long = self.configuration.location_long
 
         self.google_handler = BoothGoogle()
         self.suspend_preview = False
         self.last_photo_path = None
         self.usb_archive_path = None
-        
+
         # Performance optimizations
         self.thread_pool = ThreadPoolExecutor(max_workers=2)
         self.upload_queue = []
@@ -105,7 +106,7 @@ class BoothController:
         self.log.debug("Assembling animation")
 
         animation_filename = os.path.join(constants.TEMP_FOLDER, "animation.gif")
-        
+
         # Optimize GIF creation with PIL instead of ImageMagick for better performance
         try:
             images = []
@@ -114,7 +115,7 @@ class BoothController:
                 # Resize for faster processing while maintaining quality
                 img.thumbnail((800, 600), Image.LANCZOS)
                 images.append(img)
-            
+
             # Create optimized GIF
             images[0].save(
                 animation_filename,
@@ -125,8 +126,8 @@ class BoothController:
                 optimize=True,
                 quality=85
             )
-            
-        except Exception as e:
+
+        except Exception as e: # pylint: disable=W0718
             self.log.error("Failed to create GIF with PIL, falling back to ImageMagick: %s", e)
             # Fallback to original ImageMagick method
             command_string = f"convert -delay {gif_period_millis} " + \
@@ -359,11 +360,11 @@ class BoothController:
             self.view.update_status("Uploading photo...")
             # Show an information image while processing the photos
             self.view.show_image(os.path.join(constants.RESOURCES_FOLDER, "uploading.png"))
-            
+
             # Use background thread for upload to prevent UI blocking
             self._async_upload_and_archive(self.last_photo_path)
 
-            # Update UI on main thread immediately for better responsiveness  
+            # Update UI on main thread immediately for better responsiveness
             self.update_preview_image()
             self.view.show_buttons()
             self.view.update_status("Ready")
@@ -400,7 +401,7 @@ class BoothController:
             try:
                 # Upload original full-quality image to Google Photos
                 self.google_handler.upload_photo_to_album(photo_path)
-                
+
                 # USB Archive
                 if self.configuration.archive_to_all_usb_drives:
                     try:
@@ -428,14 +429,14 @@ class BoothController:
                     except Exception as e: # pylint: disable=W0718
                         self.log.error("Error while getting USB mount point: %s", e)
                         self.usb_archive_path = None
-                        
+
                 # Update UI on main thread
                 self.view.after(0, lambda: self.view.update_status("Upload complete"))
-                        
+
             except Exception as e: # pylint: disable=W0718
                 self.log.error("Error in background upload: %s", e)
                 self.view.after(0, lambda: self.view.update_status("Upload failed"))
-        
+
         # Start upload in background
         self.thread_pool.submit(upload_task)
 
@@ -445,10 +446,10 @@ class BoothController:
         self.view.update_status("Exiting the application...")
         self.log.info("Exiting the application")
         self.camera.stop_camera()
-        
+
         # Clean up thread pool
         self.thread_pool.shutdown(wait=False)
-        
+
         time.sleep(1)  # Reduced sleep time since we're handling callbacks better
         self._delete_temp_files()
 

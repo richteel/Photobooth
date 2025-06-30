@@ -104,7 +104,7 @@ class OAuthServices:
             try:
                 flow = client.flow_from_clientsecrets(self.client_secret, self.scopes)
                 credentials = tools.run_flow(flow, self.credential_store)
-            except Exception as e:
+            except Exception as e: # pylint: disable=W0718
                 log.error("__oauth_login: Error authenticating")
                 raise e
 
@@ -120,6 +120,11 @@ class OAuthServices:
             return None
         credentials = self.__oauth_login()
         discovery_url = "https://photoslibrary.googleapis.com/$discovery/rest?version=v1"
+
+        if credentials is None or credentials.authorize is None:
+            log.error("__get_photo_client: No valid credentials found, cannot upload picture")
+            return False
+
         return build('photoslibrary', 'v1', http=credentials.authorize(Http()),
                      discoveryServiceUrl=discovery_url)
 
@@ -139,7 +144,12 @@ class OAuthServices:
             return {}
         photo_client = self.__get_photo_client()
         try:
-            res = photo_client.albums().create(body={"album":{"title":album_name}}).execute()
+            if photo_client is None or photo_client.albums() is None: # type: ignore
+                log.error("create_album: No valid photo client found, cannot create album")
+                return None
+
+            res = photo_client.albums( # type: ignore
+                                        ).create(body={"album":{"title":album_name}}).execute()
             log.info("create_album: Album %s created with id: %s", album_name, res["id"])
             if add_placeholder_picture:
                 self.upload_picture("placeholder.png", album_id = res["id"],
@@ -163,9 +173,13 @@ class OAuthServices:
             return {}
         photo_client = self.__get_photo_client()
         albums = []
+        if photo_client is None:
+            log.error("get_user_albums: No valid photo client found, cannot fetch albums")
+            return albums
+
         try:
             log.debug("get_user_albums: Fetching first page of results")
-            request = photo_client.albums().list(pageSize=50,
+            request = photo_client.albums().list(pageSize=50, # type: ignore
                                            excludeNonAppCreatedData=
                                            exclude_non_app_created_data).execute()
             log.debug("get_user_albums: => %d albums found", len(request.get("albums", [])))
@@ -175,7 +189,7 @@ class OAuthServices:
             while (request.get("nextPageToken",None) is not None) and \
                     (len(request.get("albums",[])) == 50):
                 log.debug("get_user_albums: Fetching next page of results")
-                request = photo_client.albums().list(pageSize=50,
+                request = photo_client.albums().list(pageSize=50, # type: ignore
                                                     pageToken = request["nextPageToken"],
                                                     excludeNonAppCreatedData=
                                                     exclude_non_app_created_data).execute()
@@ -233,6 +247,9 @@ class OAuthServices:
 
         photo_client = self.__get_photo_client()
         creds = self.__oauth_login()
+        if creds is None or creds.authorize is None:
+            log.error("upload_picture: No valid credentials found, cannot upload picture")
+            return False
 
         # Step I: post file binary and get Token
         log.debug("upload_picture: Step I: uploading picture %s", filename)
@@ -246,6 +263,7 @@ class OAuthServices:
             'X-Goog-Upload-File-Name': file_path,
             'X-Goog-Upload-Protocol': 'raw',
         }
+
         http = creds.authorize(Http())
 
         try:
@@ -283,32 +301,38 @@ class OAuthServices:
 
             log.debug("upload_picture: referencing picture with id: [%s]\n %s",
                       token, json.dumps(media_reference,indent=4))
+            if photo_client is None or photo_client.mediaItems() is None: # type: ignore
+                log.error("upload_picture: No valid photo client found, cannot upload picture")
+                return False
+
             try:
                 try:
-                    res = photo_client.mediaItems().batchCreate(body=media_reference).execute()
+                    res = photo_client.mediaItems( # type: ignore
+                                                    ).batchCreate(body=media_reference).execute()
+
+                    if res["newMediaItemResults"]:
+                        status = res["newMediaItemResults"][0]["status"]
+                        # Accept both message=="OK" and code==0 as success
+                        if status.get("message") == "OK" or status.get("message") == "Success" or \
+                                status.get("code") == 0:
+                            log.info("upload_picture: successfully uploaded image %s", filename)
+                            return True
+                        log.warning("upload_picture: Unrecognized response: %s", status)
+                        return False
+                    else:
+                        log.warning("upload_picture: No newMediaItemResults in response: %s", res)
+                        return False
                 except HttpError as e:
                     if "Invalid album ID" in str(e):
                         log.error("upload_picture: album_id (%s) is not a valid album", album_id)
                         log.warning("upload_picture: retrying to reference uploaded image without" \
                                     " an album")
                         #Album is invalid, try to upload to user stream instead
-                        res = photo_client.mediaItems().batchCreate(body=
+                        res = photo_client.mediaItems().batchCreate(body= # type: ignore
                                                               dict(newMediaItems=[
                                                                   {"simpleMediaItem":
                                                                         {"uploadToken":
                                                                          token}}])).execute()
-                if res["newMediaItemResults"]:
-                    status = res["newMediaItemResults"][0]["status"]
-                    # Accept both message=="OK" and code==0 as success
-                    if status.get("message") == "OK" or status.get("message") == "Success" or \
-                            status.get("code") == 0:
-                        log.info("upload_picture: successfully uploaded image %s", filename)
-                        return True
-                    log.warning("upload_picture: Unrecognized response: %s", status)
-                    return False
-                else:
-                    log.warning("upload_picture: No newMediaItemResults in response: %s", res)
-                    return False
 
             except Exception as e: # pylint: disable=W0718
                 log.error("upload_picture: Error while referencing picture with id: %s (%s)",
@@ -334,6 +358,10 @@ class OAuthServices:
             log.debug("send_message: canceled (enable_email is False)")
             return False
         credentials = self.__oauth_login()
+        if credentials is None:
+            log.error("send_message: No valid credentials found, cannot send message")
+            return False
+
         http = credentials.authorize(Http())
         service = discovery.build('gmail', 'v1', http=http, cache_discovery=False)
 
@@ -389,7 +417,12 @@ class OAuthServices:
             main_type, sub_type = content_type.split('/', 1)
             if main_type == 'text':
                 fp = open(attachment_file, 'rb')
-                msg = MIMEText(fp.read(), _subtype=sub_type)
+                file_content = fp.read()
+                try:
+                    file_content = file_content.decode('utf-8')
+                except UnicodeDecodeError:
+                    file_content = file_content.decode('latin1')
+                msg = MIMEText(file_content, _subtype=sub_type)
                 fp.close()
             elif main_type == 'image':
                 fp = open(attachment_file, 'rb')

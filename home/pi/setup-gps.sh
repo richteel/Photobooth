@@ -18,8 +18,15 @@ echo "$USB_ID" > /sys/bus/usb/drivers/usb/unbind
 sleep 1
 echo "$USB_ID" > /sys/bus/usb/drivers/usb/bind
 
-
 sleep 5  # wait for USB to settle
+
+# Check if ttyACM0 exists and is accessible
+if [ ! -c /dev/ttyACM0 ]; then
+    echo "ERROR: /dev/ttyACM0 not found after USB reset"
+    logger "GPS Setup: ERROR - /dev/ttyACM0 not found after USB reset"
+    exit 1
+fi
+
 # ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,0,1   # GGA
 # ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,4,1   # RMC
 # ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,2,1   # GSA
@@ -30,20 +37,4 @@ sleep 5  # wait for USB to settle
 # If enabled systemctl will show errors but that is to be expected
 # gpsctl -s -f /dev/ttyACM0
 
-
-# Disable system-wide USB power management for GPS stability
-echo "Configuring system USB power management..."
-# Disable USB autosuspend globally (temporary)
-echo -1 > /sys/module/usbcore/parameters/autosuspend 2>/dev/null || true
-
-# Check if ttyACM0 exists and is accessible
-if [ ! -c /dev/ttyACM0 ]; then
-    echo "ERROR: /dev/ttyACM0 not found after USB reset"
-    logger "GPS Setup: ERROR - /dev/ttyACM0 not found after USB reset"
-    exit 1
-fi
-
-# echo "Performing GPS factory reset..."
-# logger "GPS Setup: Performing factory reset"
-# ubxtool -f /dev/ttyACM0 -v 2 -p RESET,1
-sleep 5  # wait for USB to settle
+# sleep 5  # wait for USB to settle

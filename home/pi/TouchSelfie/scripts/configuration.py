@@ -35,6 +35,8 @@ class Configuration():
     image_comment = "5 July 2025, MAHS Class of 1985 40th Class Reunion at the Montrose, PA VFW"
     software = "TouchSelfie by Caroline Dunn modified by Richard Teel"
     image_keywords = "TouchSelfie, Raspberry Pi, Photobooth"
+    location_lat = ""
+    location_long = ""
 
     #init
     def __init__(self,configuration_file_name):
@@ -139,6 +141,10 @@ class Configuration():
             self.software = config["software"]
         if "imageKeyWords" in list(config.keys()):
             self.image_keywords = config["imageKeyWords"]
+        if "location_lat" in list(config.keys()):
+            self.location_lat = config["location_lat"]
+        if "location_long" in list(config.keys()):
+            self.location_long = config["location_long"]
 
         return self.is_valid
 
@@ -174,7 +180,9 @@ class Configuration():
             "imageArtist": self.image_artist,
             "imageComment": self.image_comment,
             "software": self.software,
-            "imageKeyWords": self.image_keywords
+            "imageKeyWords": self.image_keywords,
+            "location_lat": self.location_lat,
+            "location_long": self.location_long
         }
         try:
             with open(self.config_file,'w', encoding='utf-8') as config:
