@@ -1,14 +1,13 @@
 [Unit]
-Description=Configure u-blox GPS at Boot
-After=multi-user.target
-Before=gpsd.service
-Wants=gpsd.service
+Description=Configure u-blox USB GPS and start gpsd
+After=network.target
 
 [Service]
 ExecStart=/home/pi/setup-gps.sh
-Type=oneshot
-RemainAfterExit=true
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-
