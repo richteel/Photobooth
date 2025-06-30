@@ -5,6 +5,8 @@ import shutil
 import time
 import logging
 import math
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image # type: ignore # pylint: disable=E0401
 
@@ -63,6 +65,10 @@ class BoothController:
         self.suspend_preview = False
         self.last_photo_path = None
         self.usb_archive_path = None
+        
+        # Performance optimizations
+        self.thread_pool = ThreadPoolExecutor(max_workers=2)
+        self.upload_queue = []
 
         self.log.info("os.path.expanduser('~'): %s", os.path.expanduser('~'))
         print(f"os.path.expanduser('~'): {os.path.expanduser('~')}")
@@ -99,10 +105,34 @@ class BoothController:
         self.log.debug("Assembling animation")
 
         animation_filename = os.path.join(constants.TEMP_FOLDER, "animation.gif")
-        command_string = f"convert -delay {gif_period_millis} " + \
-            f"{os.path.join(constants.TEMP_FOLDER,'photo_')}*.jpg " + \
-                f"{animation_filename}"
-        os.system(command_string)
+        
+        # Optimize GIF creation with PIL instead of ImageMagick for better performance
+        try:
+            images = []
+            for photo_filename in photos:
+                img = Image.open(photo_filename)
+                # Resize for faster processing while maintaining quality
+                img.thumbnail((800, 600), Image.LANCZOS)
+                images.append(img)
+            
+            # Create optimized GIF
+            images[0].save(
+                animation_filename,
+                save_all=True,
+                append_images=images[1:],
+                duration=gif_period_millis,
+                loop=0,
+                optimize=True,
+                quality=85
+            )
+            
+        except Exception as e:
+            self.log.error("Failed to create GIF with PIL, falling back to ImageMagick: %s", e)
+            # Fallback to original ImageMagick method
+            command_string = f"convert -delay {gif_period_millis} " + \
+                f"{os.path.join(constants.TEMP_FOLDER,'photo_')}*.jpg " + \
+                    f"{animation_filename}"
+            os.system(command_string)
         if not os.path.exists(animation_filename):
             self.view.update_status("Failed to create animated GIF.")
             self.log.warning("Failed to create animated GIF.")
@@ -196,7 +226,7 @@ class BoothController:
                 countdown_last_ms = current_ms
                 countdown_running = self.view.show_countdown()
 
-            # Update the preview image
+            # Update the preview image during countdown
             if (current_ms - photo_last_ms) >= self.view.poll_interval:
                 photo_last_ms = current_ms
                 if not self.suspend_preview:
@@ -329,36 +359,11 @@ class BoothController:
             self.view.update_status("Uploading photo...")
             # Show an information image while processing the photos
             self.view.show_image(os.path.join(constants.RESOURCES_FOLDER, "uploading.png"))
-            self.google_handler.upload_photo_to_album(self.last_photo_path)
+            
+            # Use background thread for upload to prevent UI blocking
+            self._async_upload_and_archive(self.last_photo_path)
 
-            # USB Archive?
-            if self.configuration.archive_to_all_usb_drives:
-                try:
-                    mountpoint = None
-                    # Get the path to the USB drive if not set
-                    if not self.usb_archive_path:
-                        usb_mount_point_root = "/media/pi/"
-                        root, dirs, files = next(os.walk(usb_mount_point_root)) # pylint: disable=W0612
-                        for directory in dirs:
-                            mountpoint = os.path.join(root,directory)
-                            if mountpoint.find("SETTINGS") != -1:
-                                #don't write into SETTINGS directories
-                                continue
-                            if os.access(mountpoint,os.W_OK):
-                                #can write in this mountpoint
-                                self.usb_archive_path = mountpoint
-
-                    if mountpoint is not None and self.usb_archive_path:
-                        dest_dir = os.path.join(mountpoint,"TouchSelfiePhotos")
-                        if not os.path.exists(dest_dir):
-                            os.makedirs(dest_dir)
-                        shutil.copy(self.last_photo_path, dest_dir)
-                        self.log.info("Archived photo %s to USB: %s",
-                                      self.last_photo_path, dest_dir)
-                except Exception as e: # pylint: disable=W0718
-                    self.log.error("Error while getting USB mount point: %s", e)
-                    self.usb_archive_path = None
-
+            # Update UI on main thread immediately for better responsiveness  
             self.update_preview_image()
             self.view.show_buttons()
             self.view.update_status("Ready")
@@ -389,12 +394,61 @@ class BoothController:
 
         self.view.suspend_poll = False
 
+    def _async_upload_and_archive(self, photo_path):
+        """Upload photo and handle USB archiving in background thread."""
+        def upload_task():
+            try:
+                # Upload original full-quality image to Google Photos
+                self.google_handler.upload_photo_to_album(photo_path)
+                
+                # USB Archive
+                if self.configuration.archive_to_all_usb_drives:
+                    try:
+                        mountpoint = None
+                        # Get the path to the USB drive if not set
+                        if not self.usb_archive_path:
+                            usb_mount_point_root = "/media/pi/"
+                            root, dirs, files = next(os.walk(usb_mount_point_root)) # pylint: disable=W0612
+                            for directory in dirs:
+                                mountpoint = os.path.join(root,directory)
+                                if mountpoint.find("SETTINGS") != -1:
+                                    #don't write into SETTINGS directories
+                                    continue
+                                if os.access(mountpoint,os.W_OK):
+                                    #can write in this mountpoint
+                                    self.usb_archive_path = mountpoint
+
+                        if mountpoint is not None and self.usb_archive_path:
+                            dest_dir = os.path.join(mountpoint,"TouchSelfiePhotos")
+                            if not os.path.exists(dest_dir):
+                                os.makedirs(dest_dir)
+                            shutil.copy(photo_path, dest_dir)
+                            self.log.info("Archived photo %s to USB: %s",
+                                          photo_path, dest_dir)
+                    except Exception as e: # pylint: disable=W0718
+                        self.log.error("Error while getting USB mount point: %s", e)
+                        self.usb_archive_path = None
+                        
+                # Update UI on main thread
+                self.view.after(0, lambda: self.view.update_status("Upload complete"))
+                        
+            except Exception as e: # pylint: disable=W0718
+                self.log.error("Error in background upload: %s", e)
+                self.view.after(0, lambda: self.view.update_status("Upload failed"))
+        
+        # Start upload in background
+        self.thread_pool.submit(upload_task)
+
     def handle_exit(self):
         """Handle exit events."""
         self.view.suspend_poll = True
         self.view.update_status("Exiting the application...")
         self.log.info("Exiting the application")
         self.camera.stop_camera()
+        
+        # Clean up thread pool
+        self.thread_pool.shutdown(wait=False)
+        
         time.sleep(1)  # Reduced sleep time since we're handling callbacks better
         self._delete_temp_files()
 
@@ -478,6 +532,18 @@ class BoothController:
 
         if not status["success"] or status["pil_image"] is None:
             self.view.update_status(status["message"])
+        else:
+            # If the preview image was updated successfully, update the view
+            self.view.update_preview_image(status["pil_image"])
+
+    def update_preview_image_fast(self):
+        """Update the preview image with reduced resolution for better performance."""
+        # Use smaller preview size for faster processing
+        status = self.camera.take_photo(True, width=320, height=240)
+
+        if not status["success"] or status["pil_image"] is None:
+            # Fallback to regular preview if fast preview fails
+            self.update_preview_image()
         else:
             # If the preview image was updated successfully, update the view
             self.view.update_preview_image(status["pil_image"])

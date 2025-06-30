@@ -1,0 +1,258 @@
+Update the Raspberry Pi OS and install packages by running the following code.
+sudo apt update -y && sudo apt upgrade -y
+
+# Install ImageTk, Image from PIL
+sudo apt install python3-pillow
+sudo apt install python3-pil
+sudo apt-get install python3-pil.imagetk
+sudo apt install python3-numpy
+
+# Install ImageMagick for the 'Animation' mode
+sudo apt-get install imagemagick
+
+# Install picamera2 depenancies
+sudo apt install libcap-dev
+sudo apt install libcamera-dev
+# apt search libcamera
+sudo apt install libcamera-apps
+
+# Add support for Pi Camera ?
+sudo apt install python3-picamera2
+
+# Add support to write extended EXIF data
+sudo apt install python3-piexif
+
+
+
+
+# Create virtual environment for gdata
+python -m venv ~/photobooth
+source ~/photobooth/bin/activate
+
+# Install google data api and upgrade it
+pip install gdata
+pip install --upgrade google-api-python-client
+pip install --upgrade oauth2client
+
+# Install ImageTk, Image from PIL / Appears we need to do this in the virtual envirement too.
+pip install pillow
+# pip install numpy
+
+# Leave the virtual environment
+deactivate
+
+# git clone https://github.com/richteel/TouchSelfie.git -b dev
+
+
+
+# GPS Support for VK-172
+# Install gpsd and related packages
+sudo apt -y install gpsd gpsd-tools gpsd-clients
+
+# Install Python GPS client library
+sudo apt install python3-gps
+
+# Install pyserial for direct GPS communication (if needed)
+sudo apt install python3-pyserial
+
+# Add user to dialout group for serial port access
+sudo usermod -a -G dialout $USER
+
+# Configure gpsd
+sudo nano /etc/default/gpsd
+# Edit the file to include:
+# DEVICES="/dev/ttyACM0"
+# USBAUTO="true"
+# GPSD_OPTIONS="-n"
+
+# Enable and start gpsd service
+sudo systemctl enable gpsd
+sudo systemctl start gpsd
+
+# If gpsd connection hangs, try different options
+# sudo nano /etc/default/gpsd
+# Try: GPSD_OPTIONS="-n -b"
+# Or:  GPSD_OPTIONS="-n -D 2"
+# Then: sudo systemctl restart gpsd
+
+# Reboot to ensure all changes take effect
+sudo reboot now
+
+# After reboot, test GPS with gpsd clients
+# xgps
+cgps
+
+# Check gpsd logs if having issues
+# sudo journalctl -u gpsd -f
+
+# Test direct GPS communication using gpsd (recommended)
+python3 gps_test_gpsd.py
+
+# Alternative: Test with gpspipe (often more reliable)
+python3 gps_test_pipe.py
+
+# Troubleshooting commands:
+# sudo systemctl status gpsd
+# sudo lsof /dev/ttyACM0
+# ps aux | grep gpsd
+
+# If you need to fully stop gpsd for debugging:
+# sudo systemctl stop gpsd.socket
+# sudo systemctl stop gpsd
+# sudo gpsd -D 2 -N -n /dev/ttyACM0
+# Note: UBX-ACK-NAK warnings are normal for VK-172 GPS devices
+# These indicate gpsd is communicating with the GPS but some configuration commands are not supported
+# Then restart normally:
+# sudo systemctl start gpsd.socket
+# sudo systemctl start gpsd
+
+# GPS Initialization Service Setup (if you have custom GPS configuration)
+# Create GPS setup script: /home/pi/setup-gps.sh
+# Create service file: /etc/systemd/system/gps-init.service
+# Make setup script executable:
+# sudo chmod +x /home/pi/setup-gps.sh
+# Enable the GPS init service:
+# sudo systemctl enable gps-init.service
+# Reload systemd and restart:
+# sudo systemctl daemon-reload
+# sudo systemctl start gps-init.service
+# Check service status:
+# sudo systemctl status gps-init.service
+
+# Alternative: Test direct serial access (only if gpsd is stopped)
+# sudo systemctl stop gpsd
+# python3 gps_test.py
+
+# This may be the ticket laddy
+sudo systemctl start gpsd.socket
+sudo systemctl start gpsd
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,0,1
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,4,1
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,2,1
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,3,1
+
+
+# CFG-CFG  Save command
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,0,1   # GGA
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,4,1   # RMC
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-PRT,3,0,0,0,0,0,0
+
+gpsctl -s -f /dev/ttyACM0
+
+# The following output is expected and is okay
+# pi@PhotoBooth1:~/TouchSelfie $ gpsctl -s -f /dev/ttyACM0
+# gpsctl:ERROR: no gpsd running or network error: can't connect to host/port pair.
+# /dev/ttyACM0 identified as a u-blox SW 1.00 (59842),HW 00070000 at 9600 baud.
+# pi@PhotoBooth1:~/TouchSelfie $ 
+
+
+# cat /dev/ttyACM0
+# stty -F /dev/ttyACM0 9600
+
+### Do this instead ###
+
+# 1. Create the following script at /home/pi/setup-gps.sh
+nano /home/pi/setup-gps.sh
+
+#!/bin/bash
+sleep 5  # wait for USB to settle
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,0,1   # GGA
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,4,1   # RMC
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,2,1   # GSA
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,3,1   # GSV
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-PRT,3,0,0,0,0,0,0  # ensure USB outputs NMEA
+
+
+# 2. Make it executable
+chmod +x /home/pi/setup-gps.sh
+
+# 3. Create a systemd Service (e.g., /etc/systemd/system/gps-init.service):
+sudo nano /etc/systemd/system/gps-init.service
+
+[Unit]
+Description=Configure u-blox GPS at Boot
+After=multi-user.target
+
+[Service]
+ExecStart=/home/pi/setup-gps.sh
+Type=oneshot
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
+
+# 4. Enable the Service
+sudo systemctl daemon-reexec
+sudo systemctl enable gps-init.service
+
+
+
+
+
+
+# Trying again
+sudo nano /boot/firmware/config.txt
+
+[all]
+boot_delay=1
+
+
+dmesg | tail -n 20
+
+
+nano /home/pi/setup-gps.sh
+
+FROM
+#!/bin/bash
+sleep 5  # wait for USB to settle
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,0,1   # GGA
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,4,1   # RMC
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,2,1   # GSA
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-MSG,240,3,1   # GSV
+ubxtool -f /dev/ttyACM0 -P 14 -p CFG-PRT,3,0,0,0,0,0,0  # ensure USB outputs NMEA
+
+gpsctl -s -f /dev/ttyACM0
+
+TO
+#!/bin/bash
+echo '1-1.3' > /sys/bus/usb/drivers/usb/unbind
+sleep 1
+echo '1-1.3' > /sys/bus/usb/drivers/usb/bind
+
+# Modify further so it works regardless of which port the GPS is plugged into.
+DEVICE_PATH=$(readlink -f /dev/serial/by-id/*u-blox*)
+USB_ID=$(basename "$(udevadm info -q path -n "$DEVICE_PATH" | grep -o 'usb[0-9/-]*')")
+echo "$USB_ID" > /sys/bus/usb/drivers/usb/unbind
+sleep 1
+echo "$USB_ID" > /sys/bus/usb/drivers/usb/bind
+
+
+
+#!/bin/bash
+
+# Look for a serial device with 'u-blox' in the ID string
+DEVICE_PATH=$(readlink -f /dev/serial/by-id/*u-blox*)
+
+# Extract the most specific USB path (e.g. 1-1.3)
+USB_ID=$(udevadm info -a -n "$DEVICE_PATH" | awk -F'"' '/KERNELS=="1-/ { if ($2 !~ /:/) { print $2; exit } }')
+
+# Log what we found (optional for debugging)
+echo "Reinitializing USB device at $USB_ID"
+
+# Rebind to simulate replug
+echo "$USB_ID" > /sys/bus/usb/drivers/usb/unbind
+sleep 1
+echo "$USB_ID" > /sys/bus/usb/drivers/usb/bind
+
+
+
+sudo systemctl unmask gpsd.socket
+sudo systemctl unmask gpsd
+
+
+sudo systemctl enable gpsd.socket
+sudo systemctl enable gpsd
+
+
+sudo systemctl start gpsd.socket
+sudo systemctl start gpsd

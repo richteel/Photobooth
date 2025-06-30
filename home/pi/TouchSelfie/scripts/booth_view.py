@@ -6,7 +6,7 @@ The User Interface (UI) for the Photobooth application.
 import os
 import logging
 import tkinter as tk
-from tkinter import ttk, Canvas, Button, messagebox  # pylint: disable=W0611
+from tkinter import Canvas, messagebox  # pylint: disable=W0611
 from PIL import Image, ImageTk, ImageSequence # type: ignore # pylint: disable=E0401
 
 import constants
@@ -56,7 +56,7 @@ class BoothView(tk.Tk):
         self._make_status_label()
 
         # Polling interval for the canvas update
-        self.poll_interval = 33  # milliseconds
+        self.poll_interval = 50  # milliseconds - reduced frequency for better performance
         self.suspend_poll = False  # Flag to suspend polling
         self.after(250, self.run_poll) # Should be last line in __init__
 
@@ -137,13 +137,13 @@ class BoothView(tk.Tk):
 
     def exit_application(self):
         """Exit the application."""
-        if tk.messagebox.askyesno("Confirm Exit", "Are you sure you want to quit?"):
+        if messagebox.askyesno("Confirm Exit", "Are you sure you want to quit?"):
             self.controller.handle_exit()
 
     def exit_application_error(self,
                                message: str = "An error occurred.\nQuitting the application."):
         """Exit the application."""
-        if tk.messagebox.showerror("Error", message):
+        if messagebox.showerror("Error", message):
             self.controller.handle_exit()
 
     def hide_buttons(self):
@@ -203,10 +203,10 @@ class BoothView(tk.Tk):
         """Show the frames of an animation on the canvas."""
         for frame in frames:
             # Update the canvas with the new frame
-            frame.thumbnail((800, 480), Image.ANTIALIAS)
+            frame.thumbnail((800, 480), Image.LANCZOS)
             self.update_preview_image(frame)
             self.canvas.update()
-            self.after(delay)
+            self.after(delay, self._show_animation_frames, frames, delay)
 
     def show_buttons(self):
         """Show all buttons on the canvas."""
@@ -308,7 +308,7 @@ class BoothView(tk.Tk):
         """
         try:
             image = Image.open(filename)
-            image.thumbnail((800, 480), Image.ANTIALIAS)
+            image.thumbnail((800, 480), Image.LANCZOS)
             self.update_preview_image(image)
         except Exception as e: # pylint: disable=W0718
             self.logger.error("Failed to load image %s: %s", filename, e)

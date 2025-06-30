@@ -1,0 +1,14 @@
+[Unit]
+Description=Configure u-blox GPS at Boot
+After=multi-user.target
+Before=gpsd.service
+Wants=gpsd.service
+
+[Service]
+ExecStart=/home/pi/setup-gps.sh
+Type=oneshot
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
+

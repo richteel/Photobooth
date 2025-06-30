@@ -18,7 +18,7 @@ class BoothCamera:
     image_comment: str = ""
     software: str = "TouchSelfie"
     image_keywords: str = "TouchSelfie, Raspberry Pi, Photobooth"
-    filepath: str = None
+    filepath: str = ""
 
     def __init__(self, screen_width: int = 800, screen_height: int = 480):
         """Take photo for the photobooth"""
@@ -32,7 +32,6 @@ class BoothCamera:
         self.preview_height = 480
         self.preview_position_x = 0
         self.preview_position_y = 0
-        self.camera_model = None
         self.camera = None
         self.still_config = None
         self.preview_config = None
@@ -66,14 +65,17 @@ class BoothCamera:
                 self.preview_position_x = int((self.screen_width - self.preview_width) / 2)
                 self.preview_position_y = 0
 
-            # Create preview configuration
-            self.preview_config = self.camera.create_preview_configuration(buffer_count=4,
-                                                            display="main",
-                                                            transform=Transform(hflip=1),
-                                                                sensor={
-                                                                    'output_size':
-                                                                        (self.sensor_width,
-                                                                            self.sensor_height)})
+            # Create optimized preview configuration with reduced resolution for better performance
+            preview_width = min(640, self.preview_width)  # Limit preview to 640px width max
+            preview_height = int(preview_width * self.sensor_height / self.sensor_width)
+            
+            self.preview_config = self.camera.create_preview_configuration(
+                buffer_count=2,  # Reduced from 4 to 2 for less memory usage
+                display="main",
+                transform=Transform(hflip=1),
+                main={"size": (preview_width, preview_height), "format": "BGR888"},
+                sensor={'output_size': (self.sensor_width, self.sensor_height)}
+            )
             self.preview_config['raw'] = None
             self.preview_config['lores'] = None
 
@@ -90,7 +92,6 @@ class BoothCamera:
             # Set camera options & use the preview configuration
             self.camera.align_configuration(self.preview_config)
             self.camera.configure(self.preview_config)
-            self.camera.options["compress_level"] = 2
             self.last_photo_width = self.sensor_width
             self.last_photo_height = self.sensor_height
 
@@ -149,7 +150,7 @@ class BoothCamera:
 
         return {"success": True, "message": "EXIF metadata added successfully"}
 
-    def save_image(self, pil_image = None, filepath: str = None):
+    def save_image(self, pil_image = None, filepath: str = ""):
         """Save the image to a file"""
         if pil_image is None or filepath is None:
             return {"success": False, "message": "Image or filepath is None"}
@@ -181,6 +182,10 @@ class BoothCamera:
         if self.camera is None:
             self.logger.error("Camera not initialized")
             return {"success": False, "pil_image": None, "message": "Camera not initialized"}
+        
+        if self.still_config is None or self.preview_config is None:
+            self.logger.error("Camera configurations not set")
+            return {"success": False, "pil_image": None, "message": "Camera configurations not set"}
 
         if not self.camera_started:
             self.logger.error("Camera not started")
@@ -218,9 +223,16 @@ class BoothCamera:
            (self.last_photo_width != width or self.last_photo_height != height):
             # Reconfigure the camera and take the image
             if preview:
+                # Apply optimized settings for preview mode only
+                self.camera.options["compress_level"] = 1  # Faster compression for preview
+                self.camera.options["quality"] = 80  # Reduced quality for preview performance
                 image = self.camera.switch_mode_and_capture_array(self.preview_config, "main")
                 self.last_config_was_preview = True
             else:
+                # Use default settings for final photos (high quality)
+                self.camera.options["compress_level"] = 2  # Higher quality compression
+                if "quality" in self.camera.options:
+                    del self.camera.options["quality"]  # Use default quality for final photos
                 image = self.camera.switch_mode_and_capture_array(self.still_config, "main")
         else:
             image = self.camera.capture_array("main")

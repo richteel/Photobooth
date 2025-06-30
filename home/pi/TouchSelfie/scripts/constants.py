@@ -59,7 +59,7 @@ BUTTON_PHOTO_ANIMATION = {
     "photo_count": 10,  # Number of photos to take
     "foreground_image": "", # Overlay image on top of the collage
     "snap_period_millis": 200,  # Time between two snaps in milliseconds
-    'gif_period_millis' : 50    # time interval in the animated gif
+    'gif_period_millis' : 500    # time interval in the animated gif
 }
 BUTTON_PRINT_PHOTO = {
     "name": "Print Photo",  # Name of the button
