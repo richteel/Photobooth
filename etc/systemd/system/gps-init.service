@@ -1,6 +1,7 @@
 [Unit]
 Description=Configure u-blox USB GPS and start gpsd
 After=network.target
+Wants=gpsd.service gpsd.socket
 
 [Service]
 ExecStart=/home/pi/setup-gps.sh
