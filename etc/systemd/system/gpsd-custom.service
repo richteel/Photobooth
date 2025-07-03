@@ -1,10 +1,9 @@
 [Unit]
-Description=Configure u-blox USB GPS and start gpsd
+Description=Custom GPSD Service (manual launch)
 After=network.target
-Wants=gpsd.service gpsd.socket
 
 [Service]
-ExecStart=/home/pi/gps_init.sh
+ExecStart=/usr/local/sbin/gpsd -n -N -D 2 -b /dev/ttyACM0
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

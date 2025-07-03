@@ -1855,7 +1855,8 @@ python3-pip libusb-1.0-0-dev pps-tools git
 
 
 ```bash
-git clone https://gitlab.com/gpsd/gpsd.git cd gpsd
+git clone https://gitlab.com/gpsd/gpsd.git
+cd gpsd
 ```
 
 

@@ -14,6 +14,9 @@ import constants
 class BoothView(tk.Tk):
     """View class for managing the booth application."""
 
+    # QR code detection
+    qr_buffer = ""
+
     def __init__(self, controller):
         """Initialize the BoothModel."""
         self.logger = logging.getLogger(__name__)
@@ -38,8 +41,9 @@ class BoothView(tk.Tk):
         self.canvas.pack(fill='both', expand=True)
 
         ## If keyboard is present, pressing <Ctrl>+Q will quit the application
-        self.bind("<Control-q>", lambda event: self.exit_application())
-        self.bind("<Escape>", lambda event: self.exit_application())
+        self.bind("<Control-q>", lambda event: self._exit_application())
+        self.bind("<Escape>", lambda event: self._exit_application())
+        self.bind('<KeyPress>', lambda event: self.on_key_press(event))
 
         self._make_buttons()
         self.preview_tkimage = None  # Initialize attribute to avoid linter error
@@ -135,7 +139,18 @@ class BoothView(tk.Tk):
         self.status_label = tk.Label(self.canvas, text="", justify="center", bg='blue', fg='white')
         self.update_status("Status: Ready")
 
-    def exit_application(self):
+    def _reboot_system(self):
+        """Reboot the system."""
+        if messagebox.askyesno("Confirm Reboot", "Are you sure you want to reboot?"):
+            self.update_status("Rebooting system...")
+            self.controller.handle_reboot()
+
+    def _shutdown_system(self):
+        """Shutdown the system."""
+        if messagebox.askyesno("Confirm Shutdown", "Are you sure you want to shutdown?"):
+            self.controller.handle_shutdown()
+
+    def _exit_application(self):
         """Exit the application."""
         if messagebox.askyesno("Confirm Exit", "Are you sure you want to quit?"):
             self.controller.handle_exit()
@@ -145,6 +160,28 @@ class BoothView(tk.Tk):
         """Exit the application."""
         if messagebox.showerror("Error", message):
             self.controller.handle_exit()
+
+    def handle_qr_code(self, qr_text: str):
+        """
+        Handle the QR code input.
+        This method can be used to process the QR code input.
+        """
+        qr_clean = qr_text.strip().lower()  # Clean and normalize
+        # Exact matches only for security
+        if qr_clean == "shutdown":
+            self.logger.info("Shutdown command recognized.")
+            self._shutdown_system()
+        elif qr_clean == "reboot":
+            self.logger.info("Reboot command recognized.")
+            self._reboot_system()
+        elif qr_clean == "photo":
+            self.logger.info("Photo command recognized.")
+            self.take_photo()
+        elif qr_clean == "exit":
+            self.logger.info("Exit command recognized.")
+            self._exit_application()
+        else:
+            self.logger.warning("Unknown QR command: '%s'", qr_clean)
 
     def hide_buttons(self):
         """Hide all buttons on the canvas."""
@@ -156,6 +193,20 @@ class BoothView(tk.Tk):
         for button in self.buttons_right:
             button.place_forget()
         self.update()
+
+    def on_key_press(self, event):
+        """
+        Handle key press events.
+        This method can be used to handle special key events.
+        """
+
+        if event.keysym == "Return":
+            # Process complete QR code
+            if self.qr_buffer.strip():
+                self.handle_qr_code(self.qr_buffer.strip())
+            self.qr_buffer = ""
+        elif event.char and event.char.isprintable():
+            self.qr_buffer += event.char
 
     def run_poll(self):
         """

@@ -440,18 +440,22 @@ class BoothController:
         # Start upload in background
         self.thread_pool.submit(upload_task)
 
-    def handle_exit(self):
-        """Handle exit events."""
+    def _finalize_before_shutdown(self):
+        """Cleanup resources on shutdown."""
         self.view.suspend_poll = True
-        self.view.update_status("Exiting the application...")
-        self.log.info("Exiting the application")
         self.camera.stop_camera()
 
         # Clean up thread pool
         self.thread_pool.shutdown(wait=False)
 
-        time.sleep(1)  # Reduced sleep time since we're handling callbacks better
+        time.sleep(1)
         self._delete_temp_files()
+
+    def handle_exit(self):
+        """Handle exit events."""
+        self.view.update_status("Exiting the application...")
+        self.log.info("Exiting the application")
+        self._finalize_before_shutdown()
 
         # Use quit() instead of destroy() to properly exit the mainloop
         # This prevents the "invalid command name" error from scheduled callbacks
@@ -461,6 +465,33 @@ class BoothController:
             self.log.warning("Error during quit: %s", e)
             # Fallback to destroy if quit fails
             self.view.destroy()
+
+    def handle_reboot(self):
+        """Handle reboot events."""
+        self.view.update_status("Rebooting the system...")
+        self.log.info("Rebooting the system")
+        self._finalize_before_shutdown()
+
+        # Use os.system to reboot the system
+        try:
+            os.system("sudo reboot")
+        except Exception as e: # pylint: disable=W0718
+            self.log.error("Error during reboot: %s", e)
+            self.view.update_status("Reboot failed. Please try again.")
+            # Optionally, you can call handle_exit() here to clean up before rebooting
+            self.handle_exit()
+
+    def handle_shutdown(self):
+        """Handle shutdown events."""
+        self.view.update_status("Shutting down the system...")
+        self.log.info("Shutting down the system")
+        self._finalize_before_shutdown()
+
+        # Use os.system to shutdown the system
+        try:
+            os.system("sudo shutdown -h now")
+        except Exception as e: # pylint: disable=W0718
+            self.log.error("Error during shutdown: %s", e)
 
     def handle_poll_timer(self):
         """Handle poll timer events."""
