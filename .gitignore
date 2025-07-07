@@ -207,6 +207,11 @@ home/pi/TouchSelfie/scripts/*.py~
 home/pi/TouchSelfie/Logs/*.log
 
 # ignore all files in the Photos directory
+Photos/*.png
+Photos/*.jpg
+Photos/*.gif
+
+# ignore all files in the Photos directory
 home/pi/TouchSelfie/Photos/*.png
 home/pi/TouchSelfie/Photos/*.jpg
 home/pi/TouchSelfie/Photos/*.gif
